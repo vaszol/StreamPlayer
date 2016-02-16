@@ -1,37 +1,40 @@
 package ru.vaszol.streamplayer;
 
-import android.graphics.PixelFormat;
+import android.content.res.Configuration;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.MediaController;
 import android.widget.ProgressBar;
 import android.widget.Toast;
+import android.widget.VideoView;
 
-//import android.media.MediaPlayer;
-import org.videolan.libvlc.media.MediaPlayer;
+import org.videolan.libvlc.IVLCVout;
+import org.videolan.libvlc.LibVLC;
+import org.videolan.libvlc.MediaPlayer;
+
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity
         implements
-        MediaPlayer.OnBufferingUpdateListener, MediaPlayer.OnCompletionListener,
-        MediaPlayer.OnPreparedListener, SurfaceHolder.Callback
-{
+        IVLCVout.Callback, LibVLC.HardwareAccelerationError {
     private static final String TAG = "MediaPlayerDemo";
+    private String mVideoUrl;
+
+    // media player
+    private LibVLC libvlc;
+    private VideoView videoView;
+
+    private MediaPlayer mMediaPlayer = null;
     private int mVideoWidth;
     private int mVideoHeight;
-    private MediaPlayer mMediaPlayer;
-    private SurfaceView mPreview;
-    private SurfaceHolder holder;
-    private String path;
-    private Bundle extras;
+    private final static int VideoSizeChanged = -1;
     private ProgressBar progressBar;
-    private static final String MEDIA = "media";
-    private static final int LOCAL_AUDIO = 1;
-    private static final int STREAM_AUDIO = 2;
-    private static final int RESOURCES_AUDIO = 3;
-    private static final int LOCAL_VIDEO = 4;
-    private static final int STREAM_VIDEO = 5;
 
     String vidAddress = "rtmp://rian.cdnvideo.ru:1935/rr/stream20";
     String vidAddress2 = "sdcard/Download/bootanimation_nexus.mp4";
@@ -41,124 +44,192 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         // SETUP THE UI
         setContentView(R.layout.activity_main);
-        extras = getIntent().getExtras();
-        getWindow().setFormat(PixelFormat.UNKNOWN);
-        mPreview = (SurfaceView) findViewById(R.id.vlc_surface);
-        holder = mPreview.getHolder();
-        holder.setFixedSize(300, 200);
-        holder.addCallback(this);
-        holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-        mMediaPlayer = new MediaPlayer();
-        progressBar = (ProgressBar) findViewById(R.id.progress);
+        this.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+        videoView = (VideoView) findViewById(R.id.video);
+//        mVideoUrl = getIntent().getExtras().getString("videoUrl");
+        mVideoUrl = vidAddress;
+
 
     }
 
-    private void playVideo(Integer Media) {
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        setSize(mVideoWidth, mVideoHeight);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        createMediaPlayer();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        releasePlayer();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        releasePlayer();
+    }
+
+    private void setSize(int width, int height) {
+        mVideoWidth = width;
+        mVideoHeight = height;
+        if (mVideoWidth * mVideoHeight <= 1)
+            return;
+
+        if (videoView == null || videoView == null)
+            return;
+
+// get screen size
+        int w = getWindow().getDecorView().getWidth();
+        int h = getWindow().getDecorView().getHeight();
+
+// getWindow().getDecorView() doesn't always take orientation into
+// account, we have to correct the values
+        boolean isPortrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        if (w > h && isPortrait || w < h && !isPortrait) {
+            int i = w;
+            w = h;
+            h = i;
+        }
+
+        float videoAR = (float) mVideoWidth / (float) mVideoHeight;
+        float screenAR = (float) w / (float) h;
+
+        if (screenAR < videoAR)
+            h = (int) (w / videoAR);
+        else
+            w = (int) (h * videoAR);
+
+// force surface buffer size
+        videoView.getHolder().setFixedSize(mVideoWidth, mVideoHeight);
+
+// set display size
+        ViewGroup.LayoutParams lp = videoView.getLayoutParams();
+        lp.width = w;
+        lp.height = h;
+        videoView.setLayoutParams(lp);
+        videoView.invalidate();
+    }
+
+    private void createMediaPlayer() {
+        releasePlayer();
+
         try {
-
-            switch (Media) {
-                case LOCAL_VIDEO:
-                    /*
-                     * TODO: Set the path variable to a local media file path.
-                     */
-                    path = vidAddress2;
-                    if (path == "") {
-                        // Tell the user to provide a media file URL.
-                        Toast
-                                .makeText(
-                                        MainActivity.this,
-                                        "Please edit MediaPlayerDemo_Video Activity, "
-                                                + "and set the path variable to your media file path."
-                                                + " Your media file must be stored on sdcard.",
-                                        Toast.LENGTH_LONG).show();
-
-                    }
-                    break;
-                case STREAM_VIDEO:
-                    /*
-                     * TODO: Set path variable to progressive streamable mp4 or
-                     * 3gpp format URL. Http protocol should be used.
-                     * Mediaplayer can only play "progressive streamable
-                     * contents" which basically means: 1. the movie atom has to
-                     * precede all the media data atoms. 2. The clip has to be
-                     * reasonably interleaved.
-                     *
-                     */
-                    path = vidAddress;
-                    if (path == "") {
-                        // Tell the user to provide a media file URL.
-                        Toast
-                                .makeText(
-                                        MainActivity.this,
-                                        "Please edit MediaPlayerDemo_Video Activity,"
-                                                + " and set the path variable to your media file URL.",
-                                        Toast.LENGTH_LONG).show();
-
-                    }
-
-                    break;
-
-
+            if (mVideoUrl.length() > 0) {
+                Toast toast = Toast.makeText(this, mVideoUrl, Toast.LENGTH_LONG);
+                toast.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0,
+                        0);
+                toast.show();
             }
-            Toast
-                    .makeText(
-                            MainActivity.this,
-                            path,
-                            Toast.LENGTH_LONG).show();
+
+            // Create LibVLC
+            ArrayList<String> options = new ArrayList<String>();
+            //options.add("--subsdec-encoding <encoding>");
+            options.add("--aout=opensles");
+            options.add("--audio-time-stretch"); // time stretching
+            options.add("-vvv"); // verbosity
+            libvlc = new LibVLC(options);
+            libvlc.setOnHardwareAccelerationError(this);
 
 
-            // Create a new media player and set the listeners
-            mMediaPlayer = new MediaPlayer();
-            mMediaPlayer.setDataSource(path);
-            mMediaPlayer.setDisplay(holder);
-            mMediaPlayer.prepare();
-            mMediaPlayer.setOnBufferingUpdateListener(this);
-            mMediaPlayer.setOnCompletionListener(this);
-            mMediaPlayer.setOnPreparedListener(this);
-//            mMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+            mMediaPlayer = new MediaPlayer(libvlc);
+            mMediaPlayer.setEventListener(mPlayerListener);
 
+            videoView.setVideoPath(mVideoUrl);
+            videoView.setVideoURI(Uri.parse(mVideoUrl));
+            videoView.setMediaController(new MediaController(this));
+            videoView.setOnPreparedListener(new android.media.MediaPlayer.OnPreparedListener() {
+                @Override
+                public void onPrepared(android.media.MediaPlayer mp) {
+                    Log.d("TAG", "OnPrepared called");
+                }
+            });
+
+            videoView.start();
 
         } catch (Exception e) {
-            Log.e(TAG, "error: " + e.getMessage(), e);
+            e.printStackTrace();
+            Toast.makeText(this, "Error creating player!", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // TODO: handle this cleaner
+    private void releasePlayer() {
+        if (libvlc == null)
+            return;
+        mMediaPlayer.stop();
+        final IVLCVout vout = mMediaPlayer.getVLCVout();
+        vout.removeCallback(this);
+        vout.detachViews();
+        videoView = null;
+        libvlc.release();
+        libvlc = null;
+
+        mVideoWidth = 0;
+        mVideoHeight = 0;
+    }
+
+    private MediaPlayer.EventListener mPlayerListener = new MyPlayerListener(this);
+
+    @Override
+    public void onNewLayout(IVLCVout vout, int width, int height, int visibleWidth, int visibleHeight, int sarNum, int sarDen) {
+        if (width * height == 0)
+            return;
+
+// store video size
+        mVideoWidth = width;
+        mVideoHeight = height;
+        setSize(mVideoWidth, mVideoHeight);
+    }
+
+    @Override
+    public void onSurfacesCreated(IVLCVout vlcVout) {
+
+    }
+
+    @Override
+    public void onSurfacesDestroyed(IVLCVout vlcVout) {
+
+    }
+
+    private static class MyPlayerListener implements MediaPlayer.EventListener {
+        private WeakReference mOwner;
+
+        public MyPlayerListener(MainActivity owner) {
+            mOwner = new WeakReference<MainActivity>(owner);
+        }
+
+        @Override
+        public void onEvent(MediaPlayer.Event event) {
+            MainActivity player = (MainActivity) mOwner.get();
+
+            switch (event.type) {
+                case MediaPlayer.Event.EndReached:
+                    Log.d(TAG, "MediaPlayerEndReached");
+                    player.releasePlayer();
+                    break;
+                case MediaPlayer.Event.Playing:
+                case MediaPlayer.Event.Paused:
+                case MediaPlayer.Event.Stopped:
+                default:
+                    break;
+            }
         }
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {
-        // TODO Auto-generated method stub
-        Log.d(TAG, "surfaceCreated called");
-//        playVideo(extras.getInt(MEDIA));
-        playVideo(STREAM_VIDEO);
-    }
+    public void eventHardwareAccelerationError() {
+        Log.e(TAG, "Error with hardware acceleration");
+        this.releasePlayer();
+        Toast.makeText(this, "Error with hardware acceleration", Toast.LENGTH_LONG).show();
 
-    @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        Log.d(TAG, "surfaceChanged called");
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        Log.d(TAG, "surfaceDestroyed called");
-    }
-
-    @Override
-    public void onBufferingUpdate(MediaPlayer mp, int percent) {
-        Log.d(TAG, "onBufferingUpdate percent:" + percent);
-    }
-
-    @Override
-    public void onCompletion(MediaPlayer mp) {
-        Log.d(TAG, "onCompletion called");
-    }
-
-    @Override
-    public void onPrepared(MediaPlayer mp) {
-        Log.d(TAG, "onPrepared called");
-        mVideoWidth = mMediaPlayer.getVideoWidth();
-        mVideoHeight = mMediaPlayer.getVideoHeight();
-        if (mVideoWidth != 0 && mVideoHeight != 0) {
-            holder.setFixedSize(mVideoWidth, mVideoHeight);
-            mMediaPlayer.start();
-        }
     }
 }
