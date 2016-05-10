@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.MediaController;
@@ -23,7 +24,7 @@ import java.util.ArrayList;
 public class MainActivity extends AppCompatActivity
         implements
         IVLCVout.Callback, LibVLC.HardwareAccelerationError {
-    private static final String TAG = "MediaPlayerDemo";
+    private static final String TAG = MyApplication.TAG;
     private String mVideoUrl;
 
     // media player
@@ -36,8 +37,6 @@ public class MainActivity extends AppCompatActivity
     private final static int VideoSizeChanged = -1;
     private ProgressBar progressBar;
 
-    String vidAddress = "rtmp://rian.cdnvideo.ru:1935/rr/stream20";
-    String vidAddress2 = "sdcard/Download/bootanimation_nexus.mp4";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,7 +48,7 @@ public class MainActivity extends AppCompatActivity
 
         videoView = (VideoView) findViewById(R.id.video);
 //        mVideoUrl = getIntent().getExtras().getString("videoUrl");
-        mVideoUrl = vidAddress;
+        mVideoUrl = MyApplication.vidAddress1;
 
 
     }
@@ -77,6 +76,22 @@ public class MainActivity extends AppCompatActivity
         super.onDestroy();
         releasePlayer();
     }
+
+    public void onClick(View view) {
+        if (view.getId() == R.id.fab) {
+            if (mVideoUrl.equals(MyApplication.vidAddress2)) {
+                mVideoUrl = MyApplication.vidAddress1;
+            } else if (mVideoUrl.equals(MyApplication.vidAddress1)) {
+                mVideoUrl = MyApplication.vidAddress2;
+            }
+        }
+        if (view.getId() == R.id.video) {
+
+        }
+        Log.d(MyApplication.TAG, "path=" + mVideoUrl);
+        createMediaPlayer();
+    }
+
 
     private void setSize(int width, int height) {
         mVideoWidth = width;
@@ -149,7 +164,7 @@ public class MainActivity extends AppCompatActivity
             videoView.setOnPreparedListener(new android.media.MediaPlayer.OnPreparedListener() {
                 @Override
                 public void onPrepared(android.media.MediaPlayer mp) {
-                    Log.d("TAG", "OnPrepared called");
+                    Log.d(MyApplication.TAG, "OnPrepared called");
                 }
             });
 
@@ -157,6 +172,7 @@ public class MainActivity extends AppCompatActivity
 
         } catch (Exception e) {
             e.printStackTrace();
+
             Toast.makeText(this, "Error creating player!", Toast.LENGTH_LONG).show();
         }
     }
@@ -213,7 +229,7 @@ public class MainActivity extends AppCompatActivity
 
             switch (event.type) {
                 case MediaPlayer.Event.EndReached:
-                    Log.d(TAG, "MediaPlayerEndReached");
+                    Log.d(MyApplication.TAG, "MediaPlayerEndReached");
                     player.releasePlayer();
                     break;
                 case MediaPlayer.Event.Playing:
@@ -227,7 +243,7 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void eventHardwareAccelerationError() {
-        Log.e(TAG, "Error with hardware acceleration");
+        Log.e(MyApplication.TAG, "Error with hardware acceleration");
         this.releasePlayer();
         Toast.makeText(this, "Error with hardware acceleration", Toast.LENGTH_LONG).show();
 
