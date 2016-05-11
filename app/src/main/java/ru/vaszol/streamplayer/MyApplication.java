@@ -12,7 +12,7 @@ public class MyApplication extends Application {
 
     private static MyApplication instance;
     public final static String vidAddress1 = "rtmp://rian.cdnvideo.ru:1935/rr/stream20";
-    public final static String vidAddress2 = "sdcard/Download/bootanimation_nexus.mp4";
+//    public final static String vidAddress2 = "sdcard/Download/bootanimation_nexus.mp4";
 
     public final static String TAG = "MyApplication";
     private static SimpleArrayMap<String, Object> sDataMap = new SimpleArrayMap<>();
