@@ -1,28 +1,28 @@
 package ru.vaszol.streamplayer;
 
-import android.content.Context;
 import android.content.res.Configuration;
-import android.graphics.Point;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.Display;
-import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import org.videolan.libvlc.IVLCVout;
 import org.videolan.libvlc.LibVLC;
 import org.videolan.libvlc.Media;
 import org.videolan.libvlc.MediaPlayer;
 
-import ru.vaszol.streamplayer.util.LibVLCUtil;
+import java.util.ArrayList;
+import java.util.Calendar;
 
 public class MainActivity extends AppCompatActivity
         implements
@@ -30,29 +30,34 @@ public class MainActivity extends AppCompatActivity
         MediaPlayer.EventListener {
 
     private String mVideoUrl;
-    private String videoType;
-//    private Uri mVideoUrl;
 
-    // media player
-    private LibVLC libvlc;
-//    private VideoView videoView;
+    private static final int SURFACE_BEST_FIT = 0;
+    private static final int SURFACE_FIT_HORIZONTAL = 1;
+    private static final int SURFACE_FIT_VERTICAL = 2;
+    private static final int SURFACE_FILL = 3;
+    private static final int SURFACE_16_9 = 4;
+    private static final int SURFACE_4_3 = 5;
+    private static final int SURFACE_ORIGINAL = 6;
+    private int CURRENT_SIZE = SURFACE_BEST_FIT;
 
-    private SurfaceView mSurfaceView;
-    private FrameLayout surfaceFrame;
-    private SurfaceHolder surfaceHolder;
-    private IVLCVout vlcVout;
-    private MediaPlayer mediaPlayer;
+    private SurfaceView mSurfaceView = null;
+    private FrameLayout mSurfaceFrame = null;
+    private ProgressBar progressBar = null;
 
-    private int videoWidth;
-    private int videoHight;
+    private final Handler mHandler = new Handler();
+    private View.OnLayoutChangeListener mOnLayoutChangeListener = null;
 
+    private LibVLC mLibVLC = null;
     private MediaPlayer mMediaPlayer = null;
-    private int mVideoWidth;
-    private int mVideoHeight;
-    private int mVideoVisibleWidth;
-    private int mVideoVisibleHeight;
-    private final static int VideoSizeChanged = -1;
-    private ProgressBar progressBar;
+    private IVLCVout ivlcVout = null;
+    private int mVideoHeight = 0;
+    private int mVideoWidth = 0;
+    private int mVideoVisibleHeight = 0;
+    private int mVideoVisibleWidth = 0;
+    private int mVideoSarNum = 0;
+    private int mVideoSarDen = 0;
+
+    long i = 0;
 
     /**
      * Activity
@@ -65,41 +70,45 @@ public class MainActivity extends AppCompatActivity
         this.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
-//        mVideoUrl = Uri.parse(MyApplication.vidAddress1);
         mVideoUrl = MyApplication.vidAddress1;
-        videoType = "Internet";
 
         mSurfaceView = (SurfaceView) findViewById(R.id.player_surface);
-        surfaceHolder = mSurfaceView.getHolder();
-        surfaceFrame = (FrameLayout) findViewById(R.id.player_surface_frame);
-//        createMediaPlayer();
+        mSurfaceFrame = (FrameLayout) findViewById(R.id.player_surface_frame);
+        progressBar = (ProgressBar) findViewById(R.id.progress);
+
+        final ArrayList<String> args = new ArrayList<>();
+        args.add("-vvv");   // verbosity
+        args.add("--width=640");
+        args.add("--height=480");
+        args.add("--noaudio");
+        mLibVLC = new LibVLC(args);
+        mMediaPlayer = new MediaPlayer(mLibVLC);
+        mMediaPlayer.setEventListener(this);
     }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-//        setSize(mVideoWidth, mVideoHeight);
-        setSize();
+        updateVideoSurfaces();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         createMediaPlayer();
-//        resumeMediaPlayer();
-//        playMediaPlayer();
+        playMediaPlayer();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        releasePlayer();
+        stopPlayer();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        releasePlayer();
+        destroyPlayer();
     }
 
     /**
@@ -107,198 +116,202 @@ public class MainActivity extends AppCompatActivity
      */
     public void onClick(View view) {
         Log.d(MyApplication.TAG, "onClick=" + view.toString());
-//        if (view.getId() == R.id.fab) {
-//            if (mVideoUrl.equals(MyApplication.vidAddress2)) {
-////                mVideoUrl = Uri.parse(MyApplication.vidAddress1);
-//                mVideoUrl = MyApplication.vidAddress1;
-//                videoType = "Internet";
-//            } else if (mVideoUrl.equals(MyApplication.vidAddress1)) {
-////                mVideoUrl = Uri.parse(MyApplication.vidAddress2);
-//                mVideoUrl = MyApplication.vidAddress2;
-//                videoType = "Local";
-//            }
-//        }
-//        if (view.getId() == R.id.video) {
-//
-//        }
+        if (view.getId() == R.id.rtmp) {
+            switch (mVideoUrl) {
+                case MyApplication.vidAddress1:
+                    mVideoUrl = MyApplication.vidAddress2;
+                    break;
+                case MyApplication.vidAddress2:
+                    mVideoUrl = MyApplication.vidAddress3;
+                    break;
+                case MyApplication.vidAddress3:
+                    mVideoUrl = MyApplication.vidAddress1;
+                    break;
+                default:
+                    mVideoUrl = MyApplication.vidAddress1;
+            }
+            Toast.makeText(this, "mVideoUrl=" + mVideoUrl, Toast.LENGTH_SHORT).show();
+            playMediaPlayer();
+        }
+        if (view.getId() == R.id.hls) {
+            switch (mVideoUrl) {
+                case MyApplication.vidAddress4:
+                    mVideoUrl = MyApplication.vidAddress5;
+                    break;
+                case MyApplication.vidAddress5:
+                    mVideoUrl = MyApplication.vidAddress6;
+                    break;
+                case MyApplication.vidAddress6:
+                    mVideoUrl = MyApplication.vidAddress7;
+                    break;
+                case MyApplication.vidAddress7:
+                    mVideoUrl = MyApplication.vidAddress4;
+                    break;
+                default:
+                    mVideoUrl = MyApplication.vidAddress4;
+            }
+            Toast.makeText(this, "mVideoUrl=" + mVideoUrl, Toast.LENGTH_SHORT).show();
+            playMediaPlayer();
+        }
+        if (view.getId() == R.id.clear) {
+            Log.d(MyApplication.TAG, "clear");
+            stopPlayer();
+            createMediaPlayer();
+            playMediaPlayer();
+        }
+        if (view.getId() == R.id.player_surface) {
+            String mode = "";
+            switch (CURRENT_SIZE) {
+                case SURFACE_BEST_FIT:          //0
+                    CURRENT_SIZE = SURFACE_FIT_HORIZONTAL;
+                    mode = "SURFACE_FIT_HORIZONTAL";
+                    break;
+                case SURFACE_FIT_HORIZONTAL:    //1
+                    CURRENT_SIZE = SURFACE_FIT_VERTICAL;
+                    mode = "SURFACE_FIT_VERTICAL";
+                    break;
+                case SURFACE_FIT_VERTICAL:      //2
+                    CURRENT_SIZE = SURFACE_FILL;
+                    mode = "SURFACE_FILL";
+                    break;
+                case SURFACE_FILL:              //3
+                    CURRENT_SIZE = SURFACE_16_9;
+                    mode = "SURFACE_16_9";
+                    break;
+                case SURFACE_16_9:              //4
+                    CURRENT_SIZE = SURFACE_4_3;
+                    mode = "SURFACE_4_3";
+                    break;
+                case SURFACE_4_3:               //5
+                    CURRENT_SIZE = SURFACE_ORIGINAL;
+                    mode = "SURFACE_ORIGINAL";
+                    break;
+                case SURFACE_ORIGINAL:          //6
+                    CURRENT_SIZE = SURFACE_BEST_FIT;
+                    mode = "SURFACE_BEST_FIT";
+                    break;
+            }
+            updateVideoSurfaces();
+            Toast.makeText(this, "CURRENT_SIZE=" + CURRENT_SIZE + " " + mode, Toast.LENGTH_SHORT).show();
+        }
         Log.d(MyApplication.TAG, "path=" + mVideoUrl);
-//        createMediaPlayer();
-        playMediaPlayer();
+
     }
 
-
-    //    private void setSize(int width, int height) {
-    private void setSize() {
-//        mVideoWidth = width;
-//        mVideoHeight = height;
-        if (mVideoWidth * mVideoHeight <= 1)
+    private void updateVideoSurfaces() {
+        if (mVideoWidth * mVideoHeight == 0)
             return;
+        int sw = getWindow().getDecorView().getWidth();
+        int sh = getWindow().getDecorView().getHeight();
 
-//        if (mVideoWidth == null || videoView == null)
-//            return;
+//        mMediaPlayer.getVLCVout().setWindowSize(sw, sh);
+        ivlcVout.setWindowSize(sw, sh);
+        double dw = sw, dh = sh;
+        final boolean isPortrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
 
-// get screen size
-        int w = getWindow().getDecorView().getWidth();
-        int h = getWindow().getDecorView().getHeight();
-
-// getWindow().getDecorView() doesn't always take orientation into
-// account, we have to correct the values
-        boolean isPortrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
-        if (w > h && isPortrait || w < h && !isPortrait) {
-            int i = w;
-            w = h;
-            h = i;
+        if (sw > sh && isPortrait || sw < sh && !isPortrait) {
+            dw = sh;
+            dh = sw;
         }
 
-        float videoAR = (float) mVideoWidth / (float) mVideoHeight;
-        float screenAR = (float) w / (float) h;
+        // sanity check
+        if (dw * dh == 0) {
+            Log.e(MyApplication.TAG, "Invalid surface size");
+            return;
+        }
 
-        if (screenAR < videoAR)
-            h = (int) (w / videoAR);
-        else
-            w = (int) (h * videoAR);
+        // compute the aspect ratio
+        double ar, vw;
+        if (mVideoSarDen == mVideoSarNum) {
+            /* No indication about the density, assuming 1:1 */
+            vw = mVideoVisibleWidth;
+            ar = (double) mVideoVisibleWidth / (double) mVideoVisibleHeight;
+        } else {
+            /* Use the specified aspect ratio */
+            vw = mVideoVisibleWidth * (double) mVideoSarNum / mVideoSarDen;
+            ar = vw / mVideoVisibleHeight;
+        }
 
-// force surface buffer size
-        mSurfaceView.getHolder().setFixedSize(mVideoWidth, mVideoHeight);
+        // compute the display aspect ratio
+        double dar = dw / dh;
 
-// set display size
-//        ViewGroup.LayoutParams lp = mSurfaceView.getLayoutParams();
-//        lp.width = w;
-//        lp.height = h;
-//        mSurfaceView.setLayoutParams(lp);
-//        mSurfaceView.invalidate();
+        switch (CURRENT_SIZE) {
+            case SURFACE_BEST_FIT:
+                if (dar < ar)
+                    dh = dw / ar;
+                else
+                    dw = dh * ar;
+                break;
+            case SURFACE_FIT_HORIZONTAL:
+                dh = dw / ar;
+                break;
+            case SURFACE_FIT_VERTICAL:
+                dw = dh * ar;
+                break;
+            case SURFACE_FILL:
+                break;
+            case SURFACE_16_9:
+                ar = 16.0 / 9.0;
+                if (dar < ar)
+                    dh = dw / ar;
+                else
+                    dw = dh * ar;
+                break;
+            case SURFACE_4_3:
+                ar = 4.0 / 3.0;
+                if (dar < ar)
+                    dh = dw / ar;
+                else
+                    dw = dh * ar;
+                break;
+            case SURFACE_ORIGINAL:
+                dh = mVideoVisibleHeight;
+                dw = vw;
+                break;
+        }
 
-
-
-//        mSurfaceHolder.setFixedSize(mVideoWidth, mVideoHeight);
+        // set display size
         ViewGroup.LayoutParams lp = mSurfaceView.getLayoutParams();
-        Log.d(MyApplication.TAG, "changeSurfaceSize mSurfaceHolder.setFixedSize " + mVideoWidth + " " + mVideoHeight);
-        Log.d(MyApplication.TAG, "changeSurfaceSize mSurface layout " + lp.width + " " + lp.height);
-        lp.width = (int) Math.ceil(w * mVideoWidth / mVideoVisibleWidth);
-        lp.height = (int) Math.ceil(h * mVideoHeight / mVideoVisibleHeight);
+        lp.width = (int) Math.ceil(dw * mVideoWidth / mVideoVisibleWidth);
+        lp.height = (int) Math.ceil(dh * mVideoHeight / mVideoVisibleHeight);
         mSurfaceView.setLayoutParams(lp);
-        Log.d(MyApplication.TAG, "changeSurfaceSize mSurface layout " + lp.width + " " + lp.height);
+
         // set frame size (crop if necessary)
-        lp = surfaceFrame.getLayoutParams();
-        lp.width = (int) Math.floor(w);
-        lp.height = (int) Math.floor(h);
-        surfaceFrame.setLayoutParams(lp);
+        lp = mSurfaceFrame.getLayoutParams();
+        lp.width = (int) Math.floor(dw);
+        lp.height = (int) Math.floor(dh);
+        mSurfaceFrame.setLayoutParams(lp);
 
-        mSurfaceView.invalidate();  //перепрорисовка
-        Log.d(MyApplication.TAG, "changeSurfaceSize surfaceFrame layout " + lp.width + " " + lp.height);
-        Log.d(MyApplication.TAG, "changeSurfaceSize mSurface " + mSurfaceView.getWidth() + " " + mSurfaceView.getHeight());
+        mSurfaceView.invalidate();
     }
-
-//    private void createMediaPlayer() {
-//        releasePlayer();
-//
-//        try {
-//            if (mVideoUrl.length() > 0) {
-//                Toast toast = Toast.makeText(this, mVideoUrl, Toast.LENGTH_LONG);
-//                toast.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0,
-//                        0);
-//                toast.show();
-//            }
-//
-//            // Create LibVLC
-//            ArrayList<String> options = new ArrayList<String>();
-//            //options.add("--subsdec-encoding <encoding>");
-//            options.add("--aout=opensles");
-//            options.add("--audio-time-stretch"); // time stretching
-//            options.add("-vvv"); // verbosity
-//            libvlc = new LibVLC(options);
-//            libvlc.setOnHardwareAccelerationError(this);
-//
-//
-//            mMediaPlayer = new MediaPlayer(libvlc);
-//            mMediaPlayer.setEventListener(mPlayerListener);
-//
-//            videoView.setVideoPath(mVideoUrl);
-//            videoView.setVideoURI(Uri.parse(mVideoUrl));
-//            videoView.setMediaController(new MediaController(this));
-//            videoView.setOnPreparedListener(new android.media.MediaPlayer.OnPreparedListener() {
-//                @Override
-//                public void onPrepared(android.media.MediaPlayer mp) {
-//                    Log.d(MyApplication.TAG, "OnPrepared called");
-//                }
-//            });
-//
-//            videoView.start();
-//
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//
-//            Toast.makeText(this, "Error creating player!", Toast.LENGTH_LONG).show();
-//        }
-//    }
-//
-//    // TODO: handle this cleaner
-//    private void releasePlayer() {
-//        if (libvlc == null)
-//            return;
-//        mMediaPlayer.stop();
-//        final IVLCVout vout = mMediaPlayer.getVLCVout();
-//        vout.removeCallback(this);
-//        vout.detachViews();
-//        videoView = null;
-//        libvlc.release();
-//        libvlc = null;
-//
-//        mVideoWidth = 0;
-//        mVideoHeight = 0;
-//    }
-//
-//    private MediaPlayer.EventListener mPlayerListener = new MyPlayerListener(this);
 
     /**
      * IVLCVout.Callback
      */
     @Override
     public void onNewLayout(IVLCVout vlcVout, int width, int height, int visibleWidth, int visibleHeight, int sarNum, int sarDen) {
-        Log.d(MyApplication.TAG, "onNewLayout");
-        try {
-//            totalTime = mediaPlayer.getLength();
-//            seekBarTime.setMax((int) totalTime);
-//            tvTotalTime.setText(SystemUtil.getMediaTime((int) totalTime));
-
-            videoWidth = width;
-            videoHight = height;
-            mVideoWidth = width;
-            mVideoHeight = height;
-            mVideoVisibleWidth=visibleWidth;
-            mVideoVisibleHeight=visibleHeight;
-            setSize();
-//            WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-//            Display display = windowManager.getDefaultDisplay();
-//            Point point = new Point();
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2) {
-//                display.getSize(point);
-//            }
-
-//            ViewGroup.LayoutParams layoutParams = mSurfaceView.getLayoutParams();
-//            layoutParams.width = point.x;
-//            layoutParams.height = (int) Math.ceil((float) videoHight * (float) point.x / (float) videoWidth);
-//            mSurfaceView.setLayoutParams(layoutParams);
-
-
-        } catch (Exception e) {
-            Log.d(MyApplication.TAG, e.toString());
-        }
+        mVideoWidth = width;
+        mVideoHeight = height;
+        mVideoVisibleWidth = visibleWidth;
+        mVideoVisibleHeight = visibleHeight;
+        mVideoSarNum = sarNum;
+        mVideoSarDen = sarDen;
+        updateVideoSurfaces();
     }
 
     @Override
     public void onSurfacesCreated(IVLCVout vlcVout) {
-        Log.d(MyApplication.TAG, "onSurfacesCreated");
+        Log.d(MyApplication.TAG, "IVLCVout onSurfacesCreated");
     }
 
     @Override
     public void onSurfacesDestroyed(IVLCVout vlcVout) {
-        Log.d(MyApplication.TAG, "onSurfacesDestroyed");
+        Log.d(MyApplication.TAG, "IVLCVout onSurfacesDestroyed");
     }
 
     @Override
     public void onHardwareAccelerationError(IVLCVout vlcVout) {
-        Log.d(MyApplication.TAG, "temporary method, will be removed when VLC can handle decoder fallback");
+        Log.d(MyApplication.TAG, "IVLCVout temporary method, will be removed when VLC can handle decoder fallback");
     }
 
     /**
@@ -306,62 +319,62 @@ public class MainActivity extends AppCompatActivity
      */
     @Override
     public void onEvent(MediaPlayer.Event event) {
-//        Log.d(MyApplication.TAG, "onEvent=" + event);
-        try {
-//            if (event.getTimeChanged() == 0 || totalTime == 0 || event.getTimeChanged() > totalTime) {
-//                return;
-//            }
+        Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + event.type);
+        switch (event.type) {
+            case MediaPlayer.Event.MediaChanged:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "MediaChanged");    //256
+                i = System.currentTimeMillis();
+                break;
+            case MediaPlayer.Event.Opening:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "Opening"); //258
+                Snackbar.make(mSurfaceFrame, "start", Snackbar.LENGTH_LONG)
+                        .setAction("Action", null).show();
+                progressBar.setVisibility(View.VISIBLE);
+                break;
+            case MediaPlayer.Event.Playing:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "Playing"); //260
+                Calendar calendar = Calendar.getInstance();
+                calendar.setTimeInMillis(System.currentTimeMillis() - i);
+                Snackbar.make(mSurfaceFrame, "time=" + calendar.get(Calendar.SECOND) + " millsecond=" + calendar.get(Calendar.MILLISECOND), Snackbar.LENGTH_LONG)
+                        .setAction("Action", null).show();
+                progressBar.setVisibility(View.GONE);
+                break;
+            case MediaPlayer.Event.Paused:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "Paused");      //261   --
+                break;
+            case MediaPlayer.Event.Stopped:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "Stopped"); //262       --
+                break;
+            case MediaPlayer.Event.EndReached:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "EndReached");  //265   --
+                break;
+            case MediaPlayer.Event.EncounteredError:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "EncounteredError");//266--
+                break;
+            case MediaPlayer.Event.TimeChanged:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "TimeChanged"); //267   +++
+                break;
+            case MediaPlayer.Event.PositionChanged:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "PositionChanged"); //268+++
+                break;
+            case MediaPlayer.Event.SeekableChanged:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "SeekableChanged"); //269   +
+                break;
+            case MediaPlayer.Event.PausableChanged:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "PausableChanged"); //270   +
+                break;
+            case MediaPlayer.Event.Vout:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "Vout");    //274   +
+                break;
+            case MediaPlayer.Event.ESAdded:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "ESAdded");     //276   ++
+                break;
+            case MediaPlayer.Event.ESDeleted:
+                Log.d(MyApplication.TAG, "MediaPlayer.EventListener onEvent=" + "ESDeleted");   //277   ++
+                break;
 
-//            seekBarTime.setProgress((int) event.getTimeChanged());
-//            tvCurrentTime.setText(SystemUtil.getMediaTime((int) event.getTimeChanged()));
-
-            //播放结束  люфт
-            if (mediaPlayer.getPlayerState() == Media.State.Ended) {
-//                seekBarTime.setProgress(0);
-                mediaPlayer.setTime(0);
-//                tvTotalTime.setText(SystemUtil.getMediaTime((int) totalTime));
-                mediaPlayer.stop();
-//                imgPlay.setBackgroundResource(R.drawable.videoviewx_play);
-                Log.d(MyApplication.TAG, "onEvent getPlayerState=" + mMediaPlayer.getPlayerState());
-            }
-        } catch (Exception e) {
-            Log.d(MyApplication.TAG, e.toString());
         }
     }
-
-//
-//    private static class MyPlayerListener implements MediaPlayer.EventListener {
-//        private WeakReference mOwner;
-//
-//        public MyPlayerListener(MainActivity owner) {
-//            mOwner = new WeakReference<MainActivity>(owner);
-//        }
-//
-//        @Override
-//        public void onEvent(MediaPlayer.Event event) {
-//            MainActivity player = (MainActivity) mOwner.get();
-//
-//            switch (event.type) {
-//                case MediaPlayer.Event.EndReached:
-//                    Log.d(MyApplication.TAG, "MediaPlayerEndReached");
-//                    player.releasePlayer();
-//                    break;
-//                case MediaPlayer.Event.Playing:
-//                case MediaPlayer.Event.Paused:
-//                case MediaPlayer.Event.Stopped:
-//                default:
-//                    break;
-//            }
-//        }
-//    }
-//
-//    @Override
-//    public void eventHardwareAccelerationError() {
-//        Log.e(MyApplication.TAG, "Error with hardware acceleration");
-//        this.releasePlayer();
-//        Toast.makeText(this, "Error with hardware acceleration", Toast.LENGTH_LONG).show();
-//
-//    }
 
     /**
      * Player
@@ -370,50 +383,60 @@ public class MainActivity extends AppCompatActivity
     private void createMediaPlayer() {  //создаем плеер
         Log.d(MyApplication.TAG, "createMediaPlayer"
                 + "\nmVideoUrl=" + mVideoUrl
-                + "\nvideoType=" + videoType
         );
         try {
-            LibVLC libvlc = LibVLCUtil.getLibVLC(null);
-            mediaPlayer = new MediaPlayer(libvlc);
-            vlcVout = mediaPlayer.getVLCVout();
-            vlcVout.addCallback(this);
-            vlcVout.setVideoView(mSurfaceView);
-            vlcVout.attachViews();
+            ivlcVout = mMediaPlayer.getVLCVout();
+            ivlcVout.setVideoView(mSurfaceView);
+            ivlcVout.attachViews();
+            ivlcVout.addCallback(this);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                if (mOnLayoutChangeListener == null) {
+                    mOnLayoutChangeListener = new View.OnLayoutChangeListener() {
+                        private final Runnable mRunnable = new Runnable() {
+                            @Override
+                            public void run() {
+                                updateVideoSurfaces();
+                            }
+                        };
 
-//            Media media = new Media(libvlc, mVideoUrl);
-            Media media;
-            if (videoType.equals("Local")) {
-                media = new Media(libvlc, mVideoUrl);
-            } else {
-                media = new Media(libvlc, Uri.parse(mVideoUrl));
+                        @Override
+                        public void onLayoutChange(View v, int left, int top, int right,
+                                                   int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
+                                mHandler.removeCallbacks(mRunnable);
+                                mHandler.post(mRunnable);
+                            }
+                        }
+                    };
+                }
+                mSurfaceFrame.addOnLayoutChangeListener(mOnLayoutChangeListener);
             }
-
-
-            mediaPlayer.setMedia(media);
-            mediaPlayer.setEventListener(this);
-            mediaPlayer.play();
         } catch (Exception e) {
             Log.d(MyApplication.TAG, "createMediaPlayer:" + e.toString());
         }
     }
 
-    private void resumeMediaPlayer() {  //вызвать при onResume()
-//        vlcVout.setVideoView(mSurfaceView);
-//        vlcVout.attachViews();
-//        vlcVout.addCallback(this);
-//        mediaPlayer.setEventListener(this);
+    private void destroyPlayer() { //вызвать при onDestroy()
+        Log.d(MyApplication.TAG, "destroyPlayer");
+        try {
+            mMediaPlayer.release();
+            mLibVLC.release();
+        } catch (Exception e) {
+            Log.d(MyApplication.TAG, "destroyPlayer" + e.toString());
+        }
     }
 
-    private void releasePlayer() { //вызвать при onDestroy()
-        Log.d(MyApplication.TAG, "releasePlayer");
-        try {
-//            super.onDestroy();
-//            pausePlay();
-            pauseMediaPlayer();
-            mediaPlayer.release();
-        } catch (Exception e) {
-            Log.d(MyApplication.TAG, "releasePlayer" + e.toString());
+
+    private void stopPlayer() { //вызвать при onDestroy()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+            if (mOnLayoutChangeListener != null) {
+                mSurfaceFrame.removeOnLayoutChangeListener(mOnLayoutChangeListener);
+                mOnLayoutChangeListener = null;
+            }
         }
+        mMediaPlayer.stop();
+        ivlcVout.detachViews();
+        ivlcVout.removeCallback(this);
     }
 
     /**
@@ -422,30 +445,14 @@ public class MainActivity extends AppCompatActivity
     private void playMediaPlayer() {
         Log.d(MyApplication.TAG, "playMediaPlayer mVideoUrl=" + mVideoUrl);
         try {
-            pauseMediaPlayer();
-//            Media media = new Media(libvlc, mVideoUrl);
-            Media media;
-            if (videoType.equals("Local")) {
-                media = new Media(libvlc, mVideoUrl);
-            } else {
-                media = new Media(libvlc, Uri.parse(mVideoUrl));
-            }
-            mediaPlayer.setMedia(media);
-            mediaPlayer.play();
+            Media media = new Media(mLibVLC, Uri.parse(mVideoUrl));
+            mMediaPlayer.setMedia(media);
+            media.release();
+            mMediaPlayer.play();
         } catch (Exception e) {
             Log.d(MyApplication.TAG, "startMediaPlayer" + e.toString());
         }
     }
 
-    private void pauseMediaPlayer() {
-        Log.d(MyApplication.TAG, "pauseMediaPlayer");
-        if (mediaPlayer.isPlaying()) {
-            mediaPlayer.pause();
-        }
-
-        vlcVout.detachViews();
-        vlcVout.removeCallback(this);
-        mediaPlayer.setEventListener(null);
-    }
 
 }
